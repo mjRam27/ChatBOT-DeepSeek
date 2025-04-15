@@ -1,0 +1,23 @@
+version: '3.9'
+
+services:
+  mongodb:
+    image: mongo
+    container_name: mongodb
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+
+  deepseek_service:
+    build: ./DeepSeek_service
+    container_name: deepseek_service
+    ports:
+      - "8001:8001"
+    env_file:
+      - ./DeepSeek_service/.env
+    depends_on:
+      - mongodb
+
+volumes:
+  mongo-data:
