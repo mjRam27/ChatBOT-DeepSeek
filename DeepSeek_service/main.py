@@ -4,9 +4,12 @@ import httpx
 from pymongo import MongoClient
 from dotenv import load_dotenv
 from PIL import Image
+from fastapi import UploadFile, File
+import speech_recognition as sr
 import pytesseract
 import io
 import os
+
 
 load_dotenv()
 
@@ -14,6 +17,9 @@ app = FastAPI()
 
 # Environment variables
 OPENROUTER_API_KEY = os.getenv("DEEPSEEK_API_KEY")
+
+print("🔐 Loaded API Key:", "Found ✅" if OPENROUTER_API_KEY else "Not Found ❌")
+
 mongo_uri = os.getenv("MONGODB_URI")
 
 # MongoDB setup
@@ -86,3 +92,63 @@ async def extract_text_from_image(file: UploadFile = File(...)):
     except Exception as e:
         print("❌ OCR Error:", e)
         return {"error": "Could not extract text from image."}
+
+        
+# Function to convert uploaded audio file to text
+def convert_speech_to_text(audio_path: str) -> str:
+    recognizer = sr.Recognizer()
+    with sr.AudioFile(audio_path) as source:
+        audio = recognizer.record(source)
+    try:
+        return recognizer.recognize_google(audio)
+    except sr.UnknownValueError:
+        return "Sorry, could not understand the audio."
+    except sr.RequestError as e:
+        return f"Request error: {e}"
+
+# Function to convert mic input to text
+def convert_microphone_to_text() -> str:
+    recognizer = sr.Recognizer()
+    with sr.Microphone() as source:
+        print("🎙️ Speak now...")
+        audio = recognizer.listen(source)
+    try:
+        return recognizer.recognize_google(audio)
+    except sr.UnknownValueError:
+        return "Sorry, could not understand the audio."
+    except sr.RequestError as e:
+        return f"Request error: {e}"
+
+
+
+# POST /speech-to-text – Convert uploaded audio file to text
+@app.post("/speech-to-text")
+async def transcribe_audio(file: UploadFile = File(...)):
+    try:
+        contents = await file.read()
+        file_path = f"temp_{file.filename}"
+
+        with open(file_path, "wb") as f:
+            f.write(contents)
+
+        transcript = convert_speech_to_text(file_path)
+        os.remove(file_path)
+
+        return {"transcription": transcript}
+
+    except Exception as e:
+        print("❌ Speech-to-Text Error:", e)
+        return {"error": "Could not process audio"}
+
+
+# POST /speech-to-text-mic – Convert live mic input to text (local use only)
+@app.post("/speech-to-text-mic")
+async def mic_to_text():
+    try:
+        transcript = convert_microphone_to_text()
+        return {"transcription": transcript}
+    except Exception as e:
+        print("❌ Mic Speech-to-Text Error:", e)
+        return {"error": "Could not capture or process microphone audio"}
+
+
