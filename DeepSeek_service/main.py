@@ -88,48 +88,50 @@ async def get_chat_history():
 
 # POST /ocr – Extract text from uploaded image
 @app.post("/ocr")
-async def extract_text_from_image(file: UploadFile = File(...)):
+async def extract_text_and_chat(file: UploadFile = File(...)):
     try:
+        # 1. Read and convert image to text
         contents = await file.read()
         image = Image.open(io.BytesIO(contents))
+        extracted_text = pytesseract.image_to_string(image).strip()
 
-        extracted_text = pytesseract.image_to_string(image)
+        # 2. Check for API key
+        if not OPENROUTER_API_KEY:
+            return {"error": "API key is missing. Please check your .env setup."}
 
-        return {"extracted_text": extracted_text.strip()}
+        # 3. Send extracted text to OpenRouter model
+        async with httpx.AsyncClient() as client_http:
+            response = await client_http.post(
+                url="https://openrouter.ai/api/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                    "Content-Type": "application/json",
+                    "HTTP-Referer": "http://localhost:8001",
+                    "X-Title": "Chatbot DeepSeek"
+                },
+                json={
+                    "model": "deepseek/deepseek-r1:free",
+                    "messages": [{"role": "user", "content": extracted_text}]
+                }
+            )
+
+        result = response.json()
+        print("📩 OCR Chat Response:", result)
+
+        if "choices" in result and result["choices"]:
+            return {
+                "extracted_text": extracted_text,
+                "response": result["choices"][0]["message"]["content"]
+            }
+        else:
+            return {"error": result.get("error", {}).get("message", "No valid response.")}
+
     except Exception as e:
-        print("❌ OCR Error:", e)
-        return {"error": "Could not extract text from image."}
-
-
-# Function to convert uploaded audio file to text
-def convert_speech_to_text(audio_path: str) -> str:
-    recognizer = sr.Recognizer()
-    with sr.AudioFile(audio_path) as source:
-        audio = recognizer.record(source)
-    try:
-        return recognizer.recognize_google(audio)
-    except sr.UnknownValueError:
-        return "Sorry, could not understand the audio."
-    except sr.RequestError as e:
-        return f"Request error: {e}"
-
-
-# Function to convert mic input to text
-def convert_microphone_to_text() -> str:
-    recognizer = sr.Recognizer()
-    with sr.Microphone() as source:
-        print("🎙️ Speak now...")
-        audio = recognizer.listen(source)
-    try:
-        return recognizer.recognize_google(audio)
-    except sr.UnknownValueError:
-        return "Sorry, could not understand the audio."
-    except sr.RequestError as e:
-        return f"Request error: {e}"
+        print("❌ OCR Chat Error:", e)
+        return {"error": "Could not process image or response"}
 
 
 
-# POST /speech-to-text – Convert uploaded audio file to text
 @app.post("/speech-to-text")
 async def transcribe_audio(file: UploadFile = File(...)):
     try:
@@ -142,21 +144,75 @@ async def transcribe_audio(file: UploadFile = File(...)):
         transcript = convert_speech_to_text(file_path)
         os.remove(file_path)
 
-        return {"transcription": transcript}
+        if not OPENROUTER_API_KEY:
+            return {"error": "API key is missing. Please check your .env setup."}
+
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                url="https://openrouter.ai/api/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                    "Content-Type": "application/json",
+                    "HTTP-Referer": "http://localhost:8001",
+                    "X-Title": "Chatbot DeepSeek"
+                },
+                json={
+                    "model": "deepseek/deepseek-r1:free",
+                    "messages": [{"role": "user", "content": transcript}]
+                }
+            )
+
+        result = response.json()
+        print("🧠 Speech Response:", result)
+
+        if "choices" in result and result["choices"]:
+            return {
+                "transcription": transcript,
+                "response": result["choices"][0]["message"]["content"]
+            }
+
+        return {"transcription": transcript, "error": "No valid response from model"}
 
     except Exception as e:
         print("❌ Speech-to-Text Error:", e)
         return {"error": "Could not process audio"}
 
 
-# POST /speech-to-text-mic – Convert live mic input to text (local use only)
+
 @app.post("/speech-to-text-mic")
 async def mic_to_text():
     try:
         transcript = convert_microphone_to_text()
-        return {"transcription": transcript}
+
+        if not OPENROUTER_API_KEY:
+            return {"error": "API key is missing. Please check your .env setup."}
+
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                url="https://openrouter.ai/api/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                    "Content-Type": "application/json",
+                    "HTTP-Referer": "http://localhost:8001",
+                    "X-Title": "Chatbot DeepSeek"
+                },
+                json={
+                    "model": "deepseek/deepseek-r1:free",
+                    "messages": [{"role": "user", "content": transcript}]
+                }
+            )
+
+        result = response.json()
+        print("🧠 Mic Response:", result)
+
+        if "choices" in result and result["choices"]:
+            return {
+                "transcription": transcript,
+                "response": result["choices"][0]["message"]["content"]
+            }
+
+        return {"transcription": transcript, "error": "No valid response from model"}
+
     except Exception as e:
         print("❌ Mic Speech-to-Text Error:", e)
         return {"error": "Could not capture or process microphone audio"}
-
-
