@@ -131,7 +131,6 @@ async def extract_text_and_chat(file: UploadFile = File(...)):
         return {"error": "Could not process image or response"}
 
 
-
 @app.post("/speech-to-text")
 async def transcribe_audio(file: UploadFile = File(...)):
     try:
@@ -141,12 +140,20 @@ async def transcribe_audio(file: UploadFile = File(...)):
         with open(file_path, "wb") as f:
             f.write(contents)
 
-        transcript = convert_speech_to_text(file_path)
+        # Transcribe audio
+        recognizer = sr.Recognizer()
+        with sr.AudioFile(file_path) as source:
+            audio = recognizer.record(source)
+
+        transcript = recognizer.recognize_google(audio)
+
         os.remove(file_path)
 
+        # Check for API key
         if not OPENROUTER_API_KEY:
             return {"error": "API key is missing. Please check your .env setup."}
 
+        # Send transcription to model
         async with httpx.AsyncClient() as client:
             response = await client.post(
                 url="https://openrouter.ai/api/v1/chat/completions",
@@ -154,12 +161,12 @@ async def transcribe_audio(file: UploadFile = File(...)):
                     "Authorization": f"Bearer {OPENROUTER_API_KEY}",
                     "Content-Type": "application/json",
                     "HTTP-Referer": "http://localhost:8001",
-                    "X-Title": "Chatbot DeepSeek"
+                    "X-Title": "Chatbot DeepSeek",
                 },
                 json={
                     "model": "deepseek/deepseek-r1:free",
-                    "messages": [{"role": "user", "content": transcript}]
-                }
+                    "messages": [{"role": "user", "content": transcript}],
+                },
             )
 
         result = response.json()
@@ -170,12 +177,13 @@ async def transcribe_audio(file: UploadFile = File(...)):
                 "transcription": transcript,
                 "response": result["choices"][0]["message"]["content"]
             }
-
-        return {"transcription": transcript, "error": "No valid response from model"}
+        else:
+            return {"transcription": transcript, "error": "No valid response from model"}
 
     except Exception as e:
         print("❌ Speech-to-Text Error:", e)
         return {"error": "Could not process audio"}
+
 
 
 
