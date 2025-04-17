@@ -4,12 +4,10 @@ import httpx
 from pymongo import MongoClient
 from dotenv import load_dotenv
 from PIL import Image
-from fastapi import UploadFile, File
 import speech_recognition as sr
 import pytesseract
 import io
 import os
-
 
 load_dotenv()
 
@@ -27,20 +25,27 @@ client = MongoClient(mongo_uri)
 db = client["chatbot_db"]
 collection = db["deepseek_messages"]
 
-# POST /chat – Send user message to DeepSeek and store response
+# Middleware to handle CORS
 @app.post("/chat")
 async def chat_with_deepseek(request: Request):
     try:
         data = await request.json()
         user_input = data["message"]
 
+        # 🔐 Debug print
+        print("🔐 Loaded API Key:", "✅ Found" if OPENROUTER_API_KEY else "❌ Not Found")
+
+        if not OPENROUTER_API_KEY:
+            return {"error": "API key is missing. Please check your .env setup."}
+
         async with httpx.AsyncClient() as client_http:
             response = await client_http.post(
                 url="https://openrouter.ai/api/v1/chat/completions",
                 headers={
                     "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                    # "Authorization": "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",
                     "Content-Type": "application/json",
-                    "HTTP-Referer": "http://localhost:8001",
+                    "HTTP-Referer": "http://localhost:8001",  # Or your frontend URL
                     "X-Title": "Chatbot DeepSeek"
                 },
                 json={
@@ -55,7 +60,7 @@ async def chat_with_deepseek(request: Request):
         if "choices" in result and result["choices"]:
             message = result["choices"][0]["message"]["content"]
 
-            # Save chat to MongoDB
+            # 💾 Save to MongoDB
             collection.insert_one({
                 "input": user_input,
                 "response": message
@@ -69,6 +74,7 @@ async def chat_with_deepseek(request: Request):
         print("❌ Chat Error:", e)
         return {"error": "Something went wrong. Check logs."}
 
+
 # GET /history – Return chat history
 @app.get("/history")
 async def get_chat_history():
@@ -78,6 +84,7 @@ async def get_chat_history():
     except Exception as e:
         print("❌ History Error:", e)
         return JSONResponse(content={"error": "Could not fetch chat history"}, status_code=500)
+
 
 # POST /ocr – Extract text from uploaded image
 @app.post("/ocr")
@@ -93,7 +100,7 @@ async def extract_text_from_image(file: UploadFile = File(...)):
         print("❌ OCR Error:", e)
         return {"error": "Could not extract text from image."}
 
-        
+
 # Function to convert uploaded audio file to text
 def convert_speech_to_text(audio_path: str) -> str:
     recognizer = sr.Recognizer()
@@ -105,6 +112,7 @@ def convert_speech_to_text(audio_path: str) -> str:
         return "Sorry, could not understand the audio."
     except sr.RequestError as e:
         return f"Request error: {e}"
+
 
 # Function to convert mic input to text
 def convert_microphone_to_text() -> str:

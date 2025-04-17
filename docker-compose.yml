@@ -8,6 +8,7 @@ services:
     volumes:
       - mongo-data:/data/db
 
+
   deepseek_service:
     build: ./DeepSeek_service
     container_name: deepseek_service
@@ -15,6 +16,7 @@ services:
       - "8001:8001"
     env_file:
       - ./DeepSeek_service/.env
+
 
     depends_on:
       - mongodb
